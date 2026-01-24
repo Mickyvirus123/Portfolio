@@ -79,7 +79,7 @@ section {
     display: flex;
     align-items: center;
     padding: 0 9%;
-    background: url(images/Adobe\ Express\ -\ file.png) no-repeat;
+    background: ;
     background-size: 320px;
     background-position: right center;
 }
@@ -768,4 +768,5 @@ span {
     81% {
         opacity: 0;
     }
+
 } 
