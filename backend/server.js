@@ -2,69 +2,23 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
+
+// Import database connection
+const connectDB = require('./config/database');
+
+// Import models
+const Contact = require('./models/Contact');
+const Portfolio = require('./models/Portfolio');
+
+// Connect to MongoDB
+connectDB();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Data files
-const CONTACTS_FILE = path.join(__dirname, 'data', 'contacts.json');
-const PORTFOLIO_FILE = path.join(__dirname, 'data', 'portfolio.json');
-
-// Ensure data directory exists
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Initialize data files if they don't exist
-if (!fs.existsSync(CONTACTS_FILE)) {
-    fs.writeFileSync(CONTACTS_FILE, JSON.stringify([], null, 2));
-}
-
-if (!fs.existsSync(PORTFOLIO_FILE)) {
-    const defaultPortfolio = {
-        name: "Mohammad Ali Khan",
-        title: "Frontend Developer",
-        email: "ali@example.com",
-        skills: [
-            { name: "HTML", proficiency: 90 },
-            { name: "CSS", proficiency: 85 },
-            { name: "JavaScript", proficiency: 80 },
-            { name: "Python", proficiency: 90 },
-            { name: "Django", proficiency: 80 }
-        ],
-        experience: [
-            {
-                role: "Frontend Developer Intern",
-                company: "Codesquadz",
-                duration: "August 2023 - March 2024"
-            }
-        ],
-        education: [
-            {
-                degree: "Bachelor of Technology in Computer Science",
-                school: "Gurugram University",
-                year: "2021 - 2025"
-            },
-            {
-                degree: "Intermediate",
-                school: "Sun Flower Public School",
-                year: "2019 - 2020"
-            },
-            {
-                degree: "High School",
-                school: "Sun Flower Public School",
-                year: "2018 - 2019"
-            }
-        ]
-    };
-    fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(defaultPortfolio, null, 2));
-}
 
 // Email configuration
 const nodemailer = require('nodemailer');
@@ -90,17 +44,88 @@ function validatePhone(phone) {
 // Routes
 
 // GET - Fetch portfolio data
-app.get('/api/portfolio', (req, res) => {
+app.get('/api/portfolio', async (req, res) => {
     try {
-        const portfolioData = JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf8'));
+        let portfolio = await Portfolio.findOne();
+        
+        // If no portfolio exists, create default one
+        if (!portfolio) {
+            portfolio = await Portfolio.create({
+                name: "Mohammad Ali Khan",
+                title: "Frontend Developer",
+                email: "ali@example.com",
+                skills: [
+                    { name: "HTML", proficiency: 90 },
+                    { name: "CSS", proficiency: 85 },
+                    { name: "JavaScript", proficiency: 80 },
+                    { name: "Python", proficiency: 90 },
+                    { name: "Django", proficiency: 80 }
+                ],
+                experience: [
+                    {
+                        role: "Frontend Developer Intern",
+                        company: "Codesquadz",
+                        duration: "August 2023 - March 2024"
+                    }
+                ],
+                education: [
+                    {
+                        degree: "Bachelor of Technology in Computer Science",
+                        school: "Gurugram University",
+                        year: "2021 - 2025"
+                    },
+                    {
+                        degree: "Intermediate",
+                        school: "Sun Flower Public School",
+                        year: "2019 - 2020"
+                    },
+                    {
+                        degree: "High School",
+                        school: "Sun Flower Public School",
+                        year: "2018 - 2019"
+                    }
+                ]
+            });
+        }
+
         res.json({
             success: true,
-            data: portfolioData
+            data: portfolio
         });
     } catch (error) {
+        console.error('Portfolio fetch error:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to load portfolio data',
+            error: error.message
+        });
+    }
+});
+
+// PUT - Update portfolio data (admin)
+app.put('/api/portfolio', async (req, res) => {
+    try {
+        let portfolio = await Portfolio.findOne();
+        
+        if (!portfolio) {
+            portfolio = new Portfolio(req.body);
+        } else {
+            Object.assign(portfolio, req.body);
+            portfolio.updatedAt = Date.now();
+        }
+
+        await portfolio.save();
+
+        res.json({
+            success: true,
+            message: 'Portfolio updated successfully',
+            data: portfolio
+        });
+    } catch (error) {
+        console.error('Portfolio update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update portfolio',
             error: error.message
         });
     }
@@ -137,22 +162,16 @@ app.post('/api/contacts', async (req, res) => {
             });
         }
 
-        // Create contact object
-        const contact = {
-            id: Date.now(),
+        // Create and save contact to database
+        const contact = new Contact({
             fullName,
             email,
             phone,
             subject,
-            message,
-            timestamp: new Date().toISOString(),
-            read: false
-        };
+            message
+        });
 
-        // Save to file
-        const contacts = JSON.parse(fs.readFileSync(CONTACTS_FILE, 'utf8'));
-        contacts.push(contact);
-        fs.writeFileSync(CONTACTS_FILE, JSON.stringify(contacts, null, 2));
+        const savedContact = await contact.save();
 
         // Send email notification if configured
         if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
@@ -196,7 +215,7 @@ app.post('/api/contacts', async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'Message sent successfully',
-            contactId: contact.id
+            contactId: savedContact._id
         });
     } catch (error) {
         console.error('Contact submission error:', error);
@@ -209,14 +228,16 @@ app.post('/api/contacts', async (req, res) => {
 });
 
 // GET - Fetch all contacts (admin view)
-app.get('/api/contacts', (req, res) => {
+app.get('/api/contacts', async (req, res) => {
     try {
-        const contacts = JSON.parse(fs.readFileSync(CONTACTS_FILE, 'utf8'));
+        const contacts = await Contact.find().sort({ createdAt: -1 });
         res.json({
             success: true,
+            count: contacts.length,
             data: contacts
         });
     } catch (error) {
+        console.error('Contacts fetch error:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to load contacts',
@@ -225,13 +246,106 @@ app.get('/api/contacts', (req, res) => {
     }
 });
 
+// GET - Fetch single contact
+app.get('/api/contacts/:id', async (req, res) => {
+    try {
+        const contact = await Contact.findById(req.params.id);
+        
+        if (!contact) {
+            return res.status(404).json({
+                success: false,
+                message: 'Contact not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: contact
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to load contact',
+            error: error.message
+        });
+    }
+});
+
+// PUT - Mark contact as read
+app.put('/api/contacts/:id', async (req, res) => {
+    try {
+        const contact = await Contact.findByIdAndUpdate(
+            req.params.id,
+            { read: true },
+            { new: true }
+        );
+
+        if (!contact) {
+            return res.status(404).json({
+                success: false,
+                message: 'Contact not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Contact marked as read',
+            data: contact
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update contact',
+            error: error.message
+        });
+    }
+});
+
+// DELETE - Delete contact
+app.delete('/api/contacts/:id', async (req, res) => {
+    try {
+        const contact = await Contact.findByIdAndDelete(req.params.id);
+
+        if (!contact) {
+            return res.status(404).json({
+                success: false,
+                message: 'Contact not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Contact deleted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete contact',
+            error: error.message
+        });
+    }
+});
+
 // Health check
-app.get('/api/health', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Backend is running',
-        timestamp: new Date().toISOString()
-    });
+app.get('/api/health', async (req, res) => {
+    try {
+        // Check database connection
+        const dbStatus = await Portfolio.countDocuments();
+        
+        res.json({
+            success: true,
+            message: 'Backend is running',
+            timestamp: new Date().toISOString(),
+            database: 'connected'
+        });
+    } catch (error) {
+        res.status(503).json({
+            success: false,
+            message: 'Backend error',
+            database: 'disconnected',
+            error: error.message
+        });
+    }
 });
 
 // 404 handler
