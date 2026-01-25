@@ -4,10 +4,7 @@ const connectDB = async () => {
     try {
         const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/ali-portfolio';
         
-        const conn = await mongoose.connect(mongoURI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-        });
+        const conn = await mongoose.connect(mongoURI);
 
         console.log(`✅ MongoDB connected: ${conn.connection.host}`);
         return conn;
