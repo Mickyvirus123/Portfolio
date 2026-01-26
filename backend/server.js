@@ -53,7 +53,7 @@ app.get('/api/portfolio', async (req, res) => {
             portfolio = await Portfolio.create({
                 name: "Mohammad Ali Khan",
                 title: "Frontend Developer",
-                email: "ali@example.com",
+                email: "alicse12345@gmail.com",
                 skills: [
                     { name: "HTML", proficiency: 90 },
                     { name: "CSS", proficiency: 85 },
